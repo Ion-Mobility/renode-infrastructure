@@ -1,0 +1,62 @@
+sram_l: Memory.MappedMemory @ sysbus 0x1FFFFC00
+    size: 0x400
+
+sram: Memory.MappedMemory @ sysbus 0x20000000
+    size: 0x5800
+
+flash: Memory.MappedMemory @ sysbus 0x0
+    size: 0x40000
+
+// flexnvm: Memory.MappedMemory @ sysbus 0x0
+//    size: 0x40000
+
+gpio1: GPIOPort.S32K1x_GPIO  @ sysbus 0x40049000
+//    IRQ -> nvic@9
+
+gpio2: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004B000
+//    IRQ -> nvic@9
+
+gpio3: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004C000
+//    IRQ -> nvic@9
+
+gpio4: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004C000
+    //IRQ -> nvic@9
+
+gpio5: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004D000
+    //IRQ -> nvic@9
+
+
+uart0: UART.K6xF_UART @ sysbus 0x4006A000
+    IRQ -> nvic@31
+
+nvic: IRQControllers.NVIC @ sysbus 0xE000E000
+    systickFrequency: 160000000
+    IRQ -> cpu@0
+
+cpu: CPU.CortexM @ sysbus
+    cpuType: "cortex-m0+"
+    nvic: nvic
+
+mcg: Miscellaneous.S32K_MCG @ sysbus 0x40064000
+
+//sim: Miscellaneous.K6xF_SIM @ sysbus 0x40047000
+
+ftm0: Timers.FTM @ sysbus 0x40038000
+
+//eth: Network.K6xF_Ethernet @ sysbus 0x400C0000
+    //TxIRQ -> nvic@83
+   // RxIRQ -> nvic@84
+   // MiscIRQ -> nvic@85
+
+//phy: Network.EthernetPhysicalLayer @ eth 0
+    //Id1: 0x0007
+    //Id2: 0xC0F1
+    //AutoNegotiationAdvertisement: 0x00A1
+    //AutoNegotiationLinkPartnerBasePageAbility: 0x0001
+
+//rng: Miscellaneous.K6xF_RNG @ sysbus 0x40029000
+    //IRQ -> nvic@23
+
+sysbus:
+    init:
+        ApplySVD @S32K118.svd

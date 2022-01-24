@@ -1,0 +1,41 @@
+# Boot Renode Script (boot.resc)
+
+# Add this script's path to the global path, so
+# we can include files relative to ourselves.
+path add $ORIGIN
+
+using sysbus
+
+############### Define the Gridania SoC ###############
+mach create "RT"
+
+#i @peripherals/FTM.cs
+#i @peripherals/S32K_MCG.cs
+#i @peripherals/S32k_GPIO.cs
+#i @peripherals/IMXRT_GPIO.cs
+
+i @src/Emulator/Peripherals/Peripherals/Miscellaneous/S32K_MCG.cs
+i @src/Emulator/Peripherals/Peripherals/GPIOPort/S32k_GPIO.cs
+i @src/Emulator/Peripherals/Peripherals/Timers/FTM.cs
+
+
+
+machine LoadPlatformDescription @gridania-s32k118.repl
+
+machine StartGdbServer 3333 true
+showAnalyzer uart0
+logLevel -1 mcg
+sysbus LogPeripheralAccess mcg true
+
+# Load the SPI flash into RAM
+
+# The macro `reset` gets called implicitly when running `machine Reset`
+macro reset
+"""
+    sysbus LoadELF @Bike_Prototype_EVT2E_118.elf
+    # Set $a0 to point at the args binary
+"""
+#sysbus LoadELF @Bike_Prototype_EVT2E_118.elf
+sysbus LoadELF @lpuart_echo_s32k118.elf
+
+start
