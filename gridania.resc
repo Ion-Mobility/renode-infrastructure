@@ -17,6 +17,8 @@ mach create "RT"
 i @src/Emulator/Peripherals/Peripherals/Miscellaneous/S32K_MCG.cs
 i @src/Emulator/Peripherals/Peripherals/GPIOPort/S32k_GPIO.cs
 i @src/Emulator/Peripherals/Peripherals/Timers/FTM.cs
+i @src/Emulator/Peripherals/Peripherals/UART/LowPower_UART.cs
+i @src/Emulator/Peripherals/Peripherals/UART/S32K_LPSPI.cs
 
 
 

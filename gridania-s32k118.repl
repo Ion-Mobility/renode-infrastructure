@@ -19,10 +19,10 @@ gpio2: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004B000
 gpio3: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004C000
 //    IRQ -> nvic@9
 
-gpio4: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004C000
+//gpio4: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004C000
     //IRQ -> nvic@9
 
-gpio5: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004D000
+//gpio5: GPIOPort.S32K1x_GPIO  @ sysbus 0x4004D000
     //IRQ -> nvic@9
 
 

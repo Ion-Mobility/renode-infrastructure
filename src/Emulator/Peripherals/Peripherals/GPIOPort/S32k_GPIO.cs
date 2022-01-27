@@ -174,14 +174,14 @@ namespace Antmicro.Renode.Peripherals.GPIOPort
         public S32K1x_GPIO(Machine machine) : base(machine, NumberOfPins)
         {
             locker = new object();
-            IRQ = new GPIO();
+            //IRQ = new GPIO();
             registers = new DoubleWordRegisterCollection(this, BuildRegisterMap());
             data = new bool[NumberOfPins];
             directionOutNotIn = new bool[NumberOfPins];
-            interruptEnabled = new bool[NumberOfPins];
-            interruptRequest = new bool[NumberOfPins];
-            edgeSelect = new bool[NumberOfPins];
-            interruptConfig = new InterruptConfig[NumberOfPins];
+            //interruptEnabled = new bool[NumberOfPins];
+            //interruptRequest = new bool[NumberOfPins];
+            //edgeSelect = new bool[NumberOfPins];
+            //interruptConfig = new InterruptConfig[NumberOfPins];
         }
 
         public override void Reset()
@@ -283,28 +283,28 @@ namespace Antmicro.Renode.Peripherals.GPIOPort
                         valueProviderCallback: (id, _) => directionOutNotIn[id])
                     .WithWriteCallback((_, __) => UpdateConnections())
                 },
-                {(long)Registers.PadStatus, new DoubleWordRegister(this)
-                    .WithFlags(0, NumberOfPins, FieldMode.Read, name: "PSR / GPIO pad status register",
-                        valueProviderCallback: (id, _) => Connections[id].IsSet)
-                },
+                // {(long)Registers.PadStatus, new DoubleWordRegister(this)
+                //     .WithFlags(0, NumberOfPins, FieldMode.Read, name: "PSR / GPIO pad status register",
+                //         valueProviderCallback: (id, _) => Connections[id].IsSet)
+                // },
                 // {(long)Registers.Mask, new DoubleWordRegister(this)
                 //     .WithFlags(0, NumberOfPins, name: "IMR / GPIO interrupt mask register",
                 //         writeCallback: (id, _, val) => { interruptEnabled[id] = val; },
                 //         valueProviderCallback: (id, _) => interruptEnabled[id])
                 //     .WithWriteCallback((_, __) => UpdateIRQ())
                 // },
-                {(long)Registers.Status, new DoubleWordRegister(this)
-                    .WithFlags(0, NumberOfPins, FieldMode.Read | FieldMode.WriteOneToClear, name: "ISR / GPIO interrupt status register",
-                        writeCallback: (id, _, val) =>
-                        {
-                            if(val)
-                            {
-                                interruptRequest[id] = false;
-                            }
-                        },
-                        valueProviderCallback: (id, _) => interruptRequest[id])
-                    .WithWriteCallback((_, __) => UpdateIRQ())
-                },
+                // {(long)Registers.Status, new DoubleWordRegister(this)
+                //     .WithFlags(0, NumberOfPins, FieldMode.Read | FieldMode.WriteOneToClear, name: "ISR / GPIO interrupt status register",
+                //         writeCallback: (id, _, val) =>
+                //         {
+                //             if(val)
+                //             {
+                //                 interruptRequest[id] = false;
+                //             }
+                //         },
+                //         valueProviderCallback: (id, _) => interruptRequest[id])
+                //     .WithWriteCallback((_, __) => UpdateIRQ())
+                // },
                 // {(long)Registers.EdgeSelect, new DoubleWordRegister(this)
                 //     .WithFlags(0, NumberOfPins, name: "EDGE_SEL / GPIO edge select register",
                 //         writeCallback: (id, _, val) => { edgeSelect[id] = val; },
@@ -313,27 +313,27 @@ namespace Antmicro.Renode.Peripherals.GPIOPort
 
             };
 
-            var config1 = new DoubleWordRegister(this);
-            var config2 = new DoubleWordRegister(this);
-            var half = NumberOfPins / 2;
-            for(var i = 0; i < half; ++i)
-            {
-                var j = i;
-                config1.WithEnumField<DoubleWordRegister, InterruptConfig>(j * 2, 2,
-                    name: $"ICR{j} / Interrupt configuration {j}",
-                    writeCallback: (_, val) => { interruptConfig[j] = val; },
-                    valueProviderCallback: _ => interruptConfig[j]);
-                config2.WithEnumField<DoubleWordRegister, InterruptConfig>(j * 2, 2,
-                    name: $"ICR{half + j} / Interrupt configuration {half + j}",
-                    writeCallback: (_, val) => { interruptConfig[half + j] = val; },
-                    valueProviderCallback: _ => interruptConfig[half + j]);
-            }
-            config1.WithWriteCallback((_, __) => UpdateAllInterruptRequests());
-            config2.WithWriteCallback((_, __) => UpdateAllInterruptRequests());
-            registersDictionary.Add((long)Registers.Config1, config1);
-            registersDictionary.Add((long)Registers.Config2, config2);
-            return registersDictionary;
-        }
+        //     var config1 = new DoubleWordRegister(this);
+        //     var config2 = new DoubleWordRegister(this);
+        //     var half = NumberOfPins / 2;
+        //     for(var i = 0; i < half; ++i)
+        //     {
+        //         var j = i;
+        //         config1.WithEnumField<DoubleWordRegister, InterruptConfig>(j * 2, 2,
+        //             name: $"ICR{j} / Interrupt configuration {j}",
+        //             writeCallback: (_, val) => { interruptConfig[j] = val; },
+        //             valueProviderCallback: _ => interruptConfig[j]);
+        //         config2.WithEnumField<DoubleWordRegister, InterruptConfig>(j * 2, 2,
+        //             name: $"ICR{half + j} / Interrupt configuration {half + j}",
+        //             writeCallback: (_, val) => { interruptConfig[half + j] = val; },
+        //             valueProviderCallback: _ => interruptConfig[half + j]);
+        //     }
+        //     config1.WithWriteCallback((_, __) => UpdateAllInterruptRequests());
+        //     config2.WithWriteCallback((_, __) => UpdateAllInterruptRequests());
+        //     registersDictionary.Add((long)Registers.Config1, config1);
+        //     registersDictionary.Add((long)Registers.Config2, config2);
+             return registersDictionary;
+         }
 
         private void UpdateIRQ()
         {
