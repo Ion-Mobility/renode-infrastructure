@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2021 Antmicro
+// Copyright (c) 2010-2022 Antmicro
 // Copyright (c) 2011-2015 Realtime Embedded
 // Copyright (c) 2020-2021 Microsoft
 //
@@ -7,19 +7,15 @@
 // Full license text is available in 'licenses/MIT.txt'.
 //
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using Antmicro.Renode.Core;
-using Antmicro.Renode.Utilities;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Peripherals.Bus;
 using Antmicro.Renode.Peripherals.CPU;
 using Antmicro.Renode.Peripherals.Timers;
-using Antmicro.Renode.Peripherals;
-using System.Threading;
-using System.Collections.Generic;
 using Antmicro.Renode.Time;
-using Antmicro.Migrant.Hooks;
-using Antmicro.Migrant;
+using Antmicro.Renode.Utilities;
 
 namespace Antmicro.Renode.Peripherals.IRQControllers
 {
@@ -40,9 +36,13 @@ namespace Antmicro.Renode.Peripherals.IRQControllers
             systick.LimitReached += () =>
             {
                 countFlag = true;
-                SetPendingIRQ(15);
+                if(eventEnabled)
+                {
+                    SetPendingIRQ(15);
+                }
             };
-            InitInterrupts();
+            Reset();
+            systick.EventEnabled = true;
         }
 
         public void AttachCPU(CortexM cpu)
@@ -132,7 +132,7 @@ namespace Antmicro.Renode.Peripherals.IRQControllers
                 countFlag = false;
                 return (currentCountFlag
                         | 4u // core clock CLKSOURCE
-                        | ((systick.EventEnabled ? 1u : 0u) << 1)
+                        | ((eventEnabled ? 1u : 0u) << 1)
                         | (systick.Enabled ? 1u : 0u));
             case Registers.SysTickReloadValue:
                 return (uint)systick.Limit;
@@ -197,8 +197,8 @@ namespace Antmicro.Renode.Peripherals.IRQControllers
             switch((Registers)offset)
             {
             case Registers.SysTickControl:
-                systick.EventEnabled = ((value & 2) >> 1) != 0;
-                this.NoisyLog("Systick interrupt {0}.", systick.EventEnabled ? "enabled" : "disabled");
+                eventEnabled = ((value & 2) >> 1) != 0;
+                this.NoisyLog("Systick interrupt {0}.", eventEnabled ? "enabled" : "disabled");
                 systick.Enabled = (value & 1) != 0;
                 this.NoisyLog("Systick timer {0}.", systick.Enabled ? "enabled" : "disabled");
                 break;
@@ -357,7 +357,7 @@ namespace Antmicro.Renode.Peripherals.IRQControllers
             }
             activeIRQs.Clear();
             systick.Reset();
-            systick.EventEnabled = false;
+            eventEnabled = false;
             systick.AutoUpdate = true;
             IRQ.Unset();
             countFlag = false;
@@ -766,6 +766,7 @@ namespace Antmicro.Renode.Peripherals.IRQControllers
         // bit [16] DC / Cache enable. This is a global enable bit for data and unified caches.
         private uint ccr = 0x10000;
 
+        private bool eventEnabled;
         private bool countFlag;
         private byte priorityMask;
         private bool currentSevOnPending;

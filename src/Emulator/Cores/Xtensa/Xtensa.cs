@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2021 Antmicro
+// Copyright (c) 2010-2022 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -12,7 +12,6 @@ using Antmicro.Renode.Exceptions;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Peripherals.Timers;
 using Antmicro.Renode.Peripherals.UART;
-using Antmicro.Renode.Utilities;
 using Antmicro.Renode.Utilities.Binding;
 using Endianess = ELFSharp.ELF.Endianess;
 
@@ -63,58 +62,27 @@ namespace Antmicro.Renode.Peripherals.CPU
 
         public override string Architecture { get { return "xtensa"; } }
 
+        public override ExecutionMode ExecutionMode
+        {
+            get
+            {
+                return base.ExecutionMode;
+            }
+
+            set
+            {
+                base.ExecutionMode = value;
+                TlibUpdateExecutionMode((uint)value);
+            }
+        }
+
         public override string GDBArchitecture { get { return "xtensa"; } }
 
         public override List<GDBFeatureDescriptor> GDBFeatures => new List<GDBFeatureDescriptor>();
 
-        protected override void AddNonMappedRegistersValues(ref Table table)
-        {
-            var nonMappedRegisterValues = new Dictionary<string, ulong>();
-            var enumType = typeof(XtensaMaskedRegister);
-            foreach(var register in enumType.GetEnumValues())
-            {
-                nonMappedRegisterValues.Add(
-                    enumType.GetEnumName(register),
-                    GetRegisterUnsafe((int)register).RawValue
-                );
-            }
-            table.AddRows(nonMappedRegisterValues, x => x.Key, x => "0x{0:X}".FormatWith(x.Value));
-        }
-
         protected override Interrupt DecodeInterrupt(int number)
         {
             return Interrupt.Hard;
-        }
-
-        protected IEnumerable<CPURegister> GetNonMappedRegisters()
-        {
-            var registers = new List<CPURegister>();
-            foreach(var register in Enum.GetValues(typeof(XtensaMaskedRegister)))
-            {
-                registers.Add(new CPURegister((int)register, 32, false, false));
-            }
-            return registers;
-        }
-
-        protected bool TryGetNonMappedRegister(int register, out RegisterValue value)
-        {
-            if(register >= (int)XtensaMaskedRegister.PSINTLEVEL
-                && register <= (int)XtensaMaskedRegister.PSOWB)
-            {
-                if(GetRegisterMask(register, out var maskOffset, out var maskWidth))
-                {
-                    value = GetRegisterMaskedValue(PS, maskOffset, maskWidth);
-                    return true;
-                }
-            }
-            value = default(RegisterValue);
-            return false;
-        }
-
-        protected bool TrySetNonMappedRegister(int register, RegisterValue value)
-        {
-            this.Log(LogLevel.Error, "Writing to PS* registers isn't implemented.");
-            return false;
         }
 
         [Export]
@@ -124,7 +92,7 @@ namespace Antmicro.Renode.Peripherals.CPU
             uint op = A[2];
 
             switch((XtensaSimcallOperation)op){
-            case XtensaSimcallOperation.WRITE:
+            case XtensaSimcallOperation.Write:
                 uint fd = A[3];
                 uint vaddr = A[4];
                 uint len = A[5];
@@ -165,42 +133,6 @@ namespace Antmicro.Renode.Peripherals.CPU
             return innerTimers[0].Value;
         }
 
-        private static bool GetRegisterMask(int register, out int offset, out int width)
-        {
-            switch((XtensaMaskedRegister)register)
-            {
-                case XtensaMaskedRegister.PSINTLEVEL:
-                    offset = 0; width = 4;
-                    break;
-                case XtensaMaskedRegister.PSUM:
-                    offset = 5; width = 1;
-                    break;
-                case XtensaMaskedRegister.PSWOE:
-                    offset = 18; width = 1;
-                    break;
-                case XtensaMaskedRegister.PSEXCM:
-                    offset = 4; width = 1;
-                    break;
-                case XtensaMaskedRegister.PSCALLINC:
-                    offset = 16; width = 2;
-                    break;
-                case XtensaMaskedRegister.PSOWB:
-                    offset = 8; width = 4;
-                    break;
-                default:
-                    offset = -1; width = -1;
-                    return false;
-            }
-            return true;
-        }
-
-        private RegisterValue GetRegisterMaskedValue(RegisterValue source, int maskOffset, int maskSize)
-        {
-            return RegisterValue.Create(
-                BitHelper.GetMaskedValue((uint)source.RawValue, maskOffset, maskSize),
-                (uint)maskSize);
-        }
-
         private void HandleCompareReached(int id)
         {
             // this is a mapping for sample_controller
@@ -231,31 +163,24 @@ namespace Antmicro.Renode.Peripherals.CPU
 #pragma warning disable 649
         [Import]
         private ActionUInt32UInt32 TlibSetIrqPendingBit;
-#pragma warning restore 649
 
-        private enum XtensaMaskedRegister
-        {
-            PSINTLEVEL = 105,
-            PSUM = 106,
-            PSWOE = 107,
-            PSEXCM = 108,
-            PSCALLINC = 109,
-            PSOWB = 110,
-        }
+        [Import]
+        private ActionUInt32 TlibUpdateExecutionMode;
+#pragma warning restore 649
 
         private enum XtensaSimcallOperation : uint
         {
-            EXIT = 1,
-            READ = 3,
-            WRITE = 4,
-            OPEN = 5,
-            CLOSE = 6,
-            LSEEK = 19,
-            SELECT_ONE = 29,
-            ARGC = 1000,
-            ARGV_SZ = 1001,
-            ARGV = 1002,
-            MEMSET = 1004,
+            Exit = 1,
+            Read = 3,
+            Write = 4,
+            Open = 5,
+            Close = 6,
+            Lseek = 19,
+            SelectOne = 29,
+            ReadArgc = 1000,
+            ReadArgvSize = 1001,
+            ReadArgv = 1002,
+            Memset = 1004,
         }
     }
 }
