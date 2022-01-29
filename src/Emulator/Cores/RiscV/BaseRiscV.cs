@@ -1,5 +1,5 @@
 ﻿//
-// Copyright (c) 2010-2021 Antmicro
+// Copyright (c) 2010-2022 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -232,6 +232,7 @@ namespace Antmicro.Renode.Peripherals.CPU
 
         public ulong Vector(uint registerNumber, uint elementIndex, ulong? value = null)
         {
+            AssertVectorExtension();
             if(value.HasValue)
             {
                 TlibSetVector(registerNumber, elementIndex, value.Value);
@@ -379,46 +380,6 @@ namespace Antmicro.Renode.Peripherals.CPU
             return TryGetCustomCSR(register, out value);
         }
 
-        protected bool TrySetVectorRegister(uint registerNumber, RegisterValue value)
-        {
-            var vlenb = VLEN / 8;
-            var valueArray = value.GetBytes(Endianess.BigEndian);
-
-            if(valueArray.Length != vlenb)
-            {
-                return false;
-            }
-
-            var valuePointer = Marshal.AllocHGlobal(vlenb);
-            Marshal.Copy(valueArray, 0, valuePointer, vlenb);
-            
-            var result = true;
-            if(TlibSetWholeVector(registerNumber, valuePointer) != 0)
-            {
-                result = false;
-            }
-
-            Marshal.FreeHGlobal(valuePointer);
-            return result;
-        }
-
-        protected bool TryGetVectorRegister(uint registerNumber, out RegisterValue value)
-        {
-            var vlenb = VLEN / 8;
-            var valuePointer = Marshal.AllocHGlobal(vlenb);
-            if(TlibGetWholeVector(registerNumber, valuePointer) != 0)
-            {
-                Marshal.FreeHGlobal(valuePointer);
-                value = default(RegisterValue);
-                return false;
-            }
-            var bytes = new byte[vlenb];
-            Marshal.Copy(valuePointer, bytes, 0, vlenb);
-            value = bytes;
-            Marshal.FreeHGlobal(valuePointer);
-            return true;
-        }
-
         protected bool TrySetCustomCSR(int register, RegisterValue value)
         {
             if(!nonstandardCSR.ContainsKey((ulong)register))
@@ -493,6 +454,46 @@ namespace Antmicro.Renode.Peripherals.CPU
             //The architecture name is: RV{architecture_width}{list of letters denoting instruction sets}
             return architecture.Skip(2).SkipWhile(x => Char.IsDigit(x))
                                .Select(x => (InstructionSet)(Char.ToUpper(x) - 'A'));
+        }
+
+        private bool TrySetVectorRegister(uint registerNumber, RegisterValue value)
+        {
+            var vlenb = VLEN / 8;
+            var valueArray = value.GetBytes(Endianess.BigEndian);
+
+            if(valueArray.Length != vlenb)
+            {
+                return false;
+            }
+
+            var valuePointer = Marshal.AllocHGlobal(vlenb);
+            Marshal.Copy(valueArray, 0, valuePointer, vlenb);
+            
+            var result = true;
+            if(TlibSetWholeVector(registerNumber, valuePointer) != 0)
+            {
+                result = false;
+            }
+
+            Marshal.FreeHGlobal(valuePointer);
+            return result;
+        }
+
+        private bool TryGetVectorRegister(uint registerNumber, out RegisterValue value)
+        {
+            var vlenb = VLEN / 8;
+            var valuePointer = Marshal.AllocHGlobal(vlenb);
+            if(TlibGetWholeVector(registerNumber, valuePointer) != 0)
+            {
+                Marshal.FreeHGlobal(valuePointer);
+                value = default(RegisterValue);
+                return false;
+            }
+            var bytes = new byte[vlenb];
+            Marshal.Copy(valuePointer, bytes, 0, vlenb);
+            value = bytes;
+            Marshal.FreeHGlobal(valuePointer);
+            return true;
         }
 
         private bool IsVectorRegisterNumber(int register)
@@ -704,6 +705,17 @@ namespace Antmicro.Renode.Peripherals.CPU
             Vectored = 2
         }
 
+        protected void BeforeVectorExtensionRegisterRead()
+        {
+            AssertVectorExtension();
+        }
+
+        protected RegisterValue BeforeVectorExtensionRegisterWrite(RegisterValue value)
+        {
+            AssertVectorExtension();
+            return value;
+        }
+
         protected RegisterValue BeforeMTVECWrite(RegisterValue value)
         {
             return HandleMTVEC_STVECWrite(value, "MTVEC");
@@ -738,6 +750,14 @@ namespace Antmicro.Renode.Peripherals.CPU
             }
 
             return value;
+        }
+
+        private void AssertVectorExtension()
+        {
+            if(!SupportsInstructionSet(InstructionSet.V))
+            {
+                throw new RecoverableException("Vector extention is not supported by this CPU");
+            }
         }
 
         /* Since Priv 1.10 all hypervisor interrupts descriptions were changed to 'Reserved'
