@@ -26,14 +26,13 @@ namespace Antmicro.Renode.Time
         /// </summary>
         public TimeSourceBase()
         {
-            reportTimeProgressLock = new object();
+            virtualTimeSyncLock = new object();
             isInSyncPhaseLock = new object();
 
             blockingEvent = new ManualResetEvent(true);
             delayedActions = new SortedSet<DelayedTask>();
             handles = new HandlesCollection();
-            sleeper = new Sleeper();
-            stopwatch = Stopwatch.StartNew();
+            stopwatch = new Stopwatch();
 
             hostTicksElapsed = new TimeVariantValue(10);
             virtualTicksElapsed = new TimeVariantValue(10);
@@ -41,7 +40,6 @@ namespace Antmicro.Renode.Time
             sync = new PrioritySynchronizer();
 
             Quantum = DefaultQuantum;
-            Performance = 1;
 
             this.Trace();
         }
@@ -58,10 +56,11 @@ namespace Antmicro.Renode.Time
             StopRequested = null;
             SyncHook      = null;
             TimePassed    = null;
-            handles.LatchAllAndCollectGarbage();
-            handles.UnlatchAll();
             using(sync.HighPriority)
             {
+                handles.LatchAllAndCollectGarbage();
+                handles.UnlatchAll();
+                
                 foreach(var slave in handles.All)
                 {
                     slave.Dispose();
@@ -126,6 +125,7 @@ namespace Antmicro.Renode.Time
                     return false;
                 }
 
+                stopwatch.Start();
                 isStarted = true;
                 return true;
             }
@@ -171,6 +171,7 @@ namespace Antmicro.Renode.Time
                     return;
                 }
 
+                stopwatch.Stop();
                 isStarted = false;
                 sync.Pulse();
                 blockingEvent.Set();
@@ -235,16 +236,30 @@ namespace Antmicro.Renode.Time
         /// <see cref="ITimeSource.ReportTimeProgress">
         public void ReportTimeProgress()
         {
-            lock(reportTimeProgressLock)
+            SynchronizeVirtualTime();
+        }
+
+        private void SynchronizeVirtualTime()
+        {
+            lock(virtualTimeSyncLock)
             {
-                var currentCommonElapsedTime = handles.CommonElapsedTime;
-                if(currentCommonElapsedTime > previousElapsedVirtualTime)
+                if(!handles.TryGetCommonElapsedTime(out var currentCommonElapsedTime))
                 {
-                    var timeDiff = currentCommonElapsedTime - previousElapsedVirtualTime;
-                    this.Trace($"Reporting time passed: {timeDiff}");
-                    TimePassed?.Invoke(timeDiff);
-                    previousElapsedVirtualTime = currentCommonElapsedTime;
+                    return;
                 }
+                
+                if(currentCommonElapsedTime == ElapsedVirtualTime)
+                {
+                    return;
+                }
+
+                DebugHelper.Assert(currentCommonElapsedTime > ElapsedVirtualTime, $"A slave reports time from the past! The current virtual time is {ElapsedVirtualTime}, but {currentCommonElapsedTime} has been reported");
+
+                var timeDiff = currentCommonElapsedTime - ElapsedVirtualTime;
+                this.Trace($"Reporting time passed: {timeDiff}");
+                // this will update ElapsedVirtualTime
+                UpdateTime(timeDiff);
+                TimePassed?.Invoke(timeDiff);
             }
         }
 
@@ -257,7 +272,6 @@ namespace Antmicro.Renode.Time
                 $"Cumulative load: {CumulativeLoad}",
                 $"State: {State}",
                 $"Advance immediately: {AdvanceImmediately}",
-                $"Performance: {Performance}",
                 $"Quantum: {Quantum}");
         }
 
@@ -281,18 +295,6 @@ namespace Antmicro.Renode.Time
         // TODO: do not allow to set Quantum of 0
         /// <see cref="ITimeSource.Quantum">
         public TimeInterval Quantum { get; set; }
-
-        /// <summary>
-        /// Gets or sets a scaling value for the ratio of virtual to real time flow.
-        /// </summary>
-        /// <remarks>
-        /// Value 1 means that virtual time should pass at the same pace as real time.
-        /// Value 0.5 means that each second of virtual time will take two seconds of the real time.
-        /// Value 2 means that each second of virtual time will take half a second of the real time.
-        /// CPU performance puts a limit to an effective value of this parameter (see <see cref="CurrentLoad">).
-        /// This value can be temporarily overridden by setting <see cref="AdvanceImmediately">.
-        /// </remarks>
-        public double Performance { get; set; }
 
         /// <summary>
         /// Gets the value representing current load, i.e., value indicating how much time the emulation spends sleeping in order to match the expected <see cref="Performance">.
@@ -386,14 +388,15 @@ namespace Antmicro.Renode.Time
             var quantum = NearestSyncPoint - ElapsedVirtualTime;
             this.Trace($"Starting a loop with #{quantum.Ticks} ticks");
 
-            virtualTimeElapsed = TimeInterval.Empty;
+            SynchronizeVirtualTime();
+            var elapsedVirtualTimeAtStart = ElapsedVirtualTime;
+            
             using(sync.LowPriority)
             {
                 handles.LatchAllAndCollectGarbage();
                 var shouldGrantTime = handles.AreAllReadyForNewGrant;
 
                 this.Trace($"Iteration start: slaves left {handles.ActiveCount}; will we try to grant time? {shouldGrantTime}");
-                elapsedAtLastGrant = stopwatch.Elapsed;
 
                 if(handles.ActiveCount > 0)
                 {
@@ -419,9 +422,8 @@ namespace Antmicro.Renode.Time
                         executor.ExecuteInParallel(handles.WithLinkedListNode);
                     }
 
-                    var commonElapsedTime = handles.CommonElapsedTime;
-                    DebugHelper.Assert(commonElapsedTime >= ElapsedVirtualTime, $"A slave reports time from the past! The current virtual time is {ElapsedVirtualTime}, but {commonElapsedTime} has been reported");
-                    virtualTimeElapsed = commonElapsedTime - ElapsedVirtualTime;
+                    SynchronizeVirtualTime();
+                    virtualTimeElapsed = ElapsedVirtualTime - elapsedVirtualTimeAtStart;
                 }
                 else
                 {
@@ -429,26 +431,12 @@ namespace Antmicro.Renode.Time
                     // if there are no slaves just make the time pass
                     virtualTimeElapsed = quantum;
 
+                    UpdateTime(quantum);
                     // here we must trigger `TimePassed` manually as no handles has been updated so they won't reflect the passed time
                     TimePassed?.Invoke(quantum);
                 }
 
                 handles.UnlatchAll();
-
-                State = TimeSourceState.Sleeping;
-                var elapsedThisTime = stopwatch.Elapsed - elapsedAtLastGrant;
-                if(!AdvanceImmediately)
-                {
-                    var scaledVirtualTicksElapsed = virtualTimeElapsed.WithScaledTicks(1 / Performance).ToTimeSpan() - elapsedThisTime;
-                    sleeper.Sleep(scaledVirtualTicksElapsed);
-                }
-
-                lock(hostTicksElapsed)
-                {
-                    this.Trace($"Updating virtual time by {virtualTimeElapsed.InMicroseconds} us");
-                    this.virtualTicksElapsed.Update(virtualTimeElapsed.Ticks);
-                    this.hostTicksElapsed.Update(TimeInterval.FromTimeSpan(elapsedThisTime).Ticks);
-                }
             }
 
             if(!isBlocked)
@@ -465,6 +453,20 @@ namespace Antmicro.Renode.Time
 
             this.Trace($"The end of {nameof(InnerExecute)} with result={!isBlocked}");
             return !isBlocked;
+        }
+
+        private void UpdateTime(TimeInterval virtualTimeElapsed)
+        {
+            lock(hostTicksElapsed)
+            {
+                var currentTimestamp = stopwatch.Elapsed;
+                var elapsedThisTime = currentTimestamp - elapsedAtLastUpdate;
+                elapsedAtLastUpdate = currentTimestamp;
+                
+                this.Trace($"Updating virtual time by {virtualTimeElapsed.InMicroseconds} us");
+                this.virtualTicksElapsed.Update(virtualTimeElapsed.Ticks);
+                this.hostTicksElapsed.Update(TimeInterval.FromTimeSpan(elapsedThisTime).Ticks);
+            }
         }
 
         /// <summary>
@@ -574,7 +576,10 @@ namespace Antmicro.Renode.Time
                 EnterBlockedState();
             }
 
-            handles.UpdateHandle(handle);
+            using(sync.HighPriority)
+            {
+                handles.UpdateHandle(handle);
+            }
         }
 
         /// <summary>
@@ -646,7 +651,6 @@ namespace Antmicro.Renode.Time
         protected readonly Stopwatch stopwatch;
         // we use special object for locking as it was observed that idle dispatcher thread can starve other threads when using simple lock(object)
         protected readonly PrioritySynchronizer sync;
-        protected readonly Sleeper sleeper;
 
         /// <summary>
         /// Used to request a pause on sinks before trying to acquire their locks.
@@ -659,16 +663,15 @@ namespace Antmicro.Renode.Time
         [Antmicro.Migrant.Constructor(true)]
         private ManualResetEvent blockingEvent;
 
-        private TimeSpan elapsedAtLastGrant;
+        private TimeSpan elapsedAtLastUpdate;
         private bool isBlocked;
         private bool updateNearestSyncPoint;
         private int? executeThreadId;
 
-        private TimeInterval previousElapsedVirtualTime;
         private readonly TimeVariantValue virtualTicksElapsed;
         private readonly TimeVariantValue hostTicksElapsed;
         private readonly SortedSet<DelayedTask> delayedActions;
-        private readonly object reportTimeProgressLock;
+        private readonly object virtualTimeSyncLock;
         private readonly object isInSyncPhaseLock;
 
         private static readonly TimeInterval DefaultQuantum = TimeInterval.FromTicks(100);

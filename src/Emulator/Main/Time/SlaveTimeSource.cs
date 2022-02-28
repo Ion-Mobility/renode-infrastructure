@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2018 Antmicro
+// Copyright (c) 2010-2022 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -25,6 +25,7 @@ namespace Antmicro.Renode.Time
         public SlaveTimeSource()
         {
             locker = new object();
+            TimePassed += HandleTimePassed;
         }
 
         /// <summary>
@@ -61,10 +62,10 @@ namespace Antmicro.Renode.Time
                     this.Trace();
                     return;
                 }
-                sleeper.Disable(); //this will interrupt a sleeping thread keeping `sync` and prevent other threads from obtaining it and going into sleep
                 RequestStop();
                 using(sync.HighPriority)
                 {
+                    stopwatch.Stop();
                     isPaused = true;
                     DeactivateSlavesSourceSide();
                 }
@@ -78,13 +79,13 @@ namespace Antmicro.Renode.Time
         public void Resume()
         {
             this.Trace("Resuming...");
-            sleeper.Enable();
             lock(locker)
             {
                 using(sync.HighPriority)
                 {
                     ActivateSlavesSourceSide();
                     isPaused = false;
+                    stopwatch.Start();
                 }
             }
             this.Trace("Resumed");
@@ -276,6 +277,11 @@ namespace Antmicro.Renode.Time
                 }
             }
             threadToJoin?.Join();
+        }
+        
+        private void HandleTimePassed(TimeInterval diff)
+        {
+            TimeHandle?.ReportProgress(diff);
         }
 
         [Transient]

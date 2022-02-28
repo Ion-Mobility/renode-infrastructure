@@ -411,6 +411,7 @@ namespace Antmicro.Renode.Peripherals.CPU
                 isPaused = true;
                 this.Trace("Requesting pause");
                 TlibSetReturnRequest();
+                sleeper.Interrupt();
             }
         }
 
@@ -484,6 +485,10 @@ namespace Antmicro.Renode.Peripherals.CPU
                 if(started && (lastTlibResult == ExecutionResult.WaitingForInterrupt || !(DisableInterruptsWhileStepping && IsSingleStepMode)))
                 {
                     TlibSetIrqWrapped(number, value);
+                    if(EmulationManager.Instance.CurrentEmulation.Mode != Emulation.EmulationMode.SynchronizedIO)
+                    {
+                        sleeper.Interrupt();
+                    }
                 }
             }
         }
@@ -2105,13 +2110,19 @@ namespace Antmicro.Renode.Peripherals.CPU
                     if(this.IsInDebugMode() != 1u && !this.neverWaitForInterrupt)
                     {
                         this.Trace();
-                        // here we test if the nearest scheduled interrupt from timers will happen in this time period:
-                        // if so, we simply jump directly to this moment reporting progress;
-                        // otherwise we immediately finish the execution of this period
-                        instructionsToNearestLimit = InstructionsToNearestLimit();
+                        var instructionsToSkip = Math.Min(InstructionsToNearestLimit(), instructionsLeftThisRound);
+                        
+                        if(!machine.LocalTimeSource.AdvanceImmediately)
+                        {
+                            var intervalToSleep = TimeInterval.FromCPUCycles(instructionsToSkip, PerformanceInMips, out var unused).ToTimeSpan();
+                            var interrupted = sleeper.Sleep(intervalToSleep, out var intervalSlept);
 
-                        this.Trace($"Instructions to nearest limit are: {instructionsToNearestLimit}");
-                        var instructionsToSkip = Math.Min(instructionsToNearestLimit, instructionsLeftThisRound);
+                            if(interrupted)
+                            {
+                                instructionsToSkip = TimeInterval.FromTimeSpan(intervalSlept).ToCPUCycles(PerformanceInMips, out var _);
+                            }
+                        }
+                        
                         ReportProgress(instructionsToSkip);
                     }
                     else
@@ -2168,6 +2179,8 @@ namespace Antmicro.Renode.Peripherals.CPU
 
             return executedResiduum != initialExecutedResiduum || TimeHandle.TotalElapsedTime != initialTotalElapsedTime;
         }
+
+        private readonly Sleeper sleeper = new Sleeper();
 
         private ulong InstructionsToNearestLimit()
         {
@@ -2418,7 +2431,9 @@ restart:
 
             public void ExecuteCallbacks()
             {
-                foreach(var callback in callbacks)
+                // As hooks can be removed inside the callback, .ToList()
+                // is required to avoid _Collection was modified_ exception.
+                foreach(var callback in callbacks.ToList())
                 {
                     callback(cpu, address);
                 }

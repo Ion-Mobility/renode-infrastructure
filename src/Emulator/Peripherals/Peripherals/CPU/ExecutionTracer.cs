@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2021 Antmicro
+// Copyright (c) 2010-2022 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -16,6 +16,7 @@ using Antmicro.Renode.Exceptions;
 using Antmicro.Renode.Logging;
 using Antmicro.Renode.Core;
 using Antmicro.Renode.Utilities;
+using Antmicro.Renode.Peripherals.CPU.Disassembler;
 
 namespace Antmicro.Renode.Peripherals.CPU
 {
@@ -51,6 +52,15 @@ namespace Antmicro.Renode.Peripherals.CPU
             this.format = format;
             AttachedCPU = cpu;
 
+            if(AttachedCPU.Architecture == "riscv" || AttachedCPU.Architecture == "riscv64")
+            {
+                tryDisassembleInstruction = TryDisassembleRiscVInstruction;
+            }
+            else
+            {
+                tryDisassembleInstruction = AttachedCPU.Disassembler.TryDisassembleInstruction;
+            }
+
             try
             {
                 // truncate the file
@@ -61,7 +71,7 @@ namespace Antmicro.Renode.Peripherals.CPU
                 throw new RecoverableException($"There was an error when preparing the execution trace output file {file}: {e.Message}");
             }
             
-            AttachedCPU.SetHookAtBlockEnd(HandleBlock);
+            AttachedCPU.SetHookAtBlockEnd(HandleBlockEndHook);
         }
 
         public void Dispose()
@@ -99,7 +109,7 @@ namespace Antmicro.Renode.Peripherals.CPU
 
         private void HandleBlock(Block block, StringBuilder sb)
         {
-            var pc = block.StartingPC;
+            var pc = block.FirstInstructionPC;
             var counter = 0;
 
             while(counter < (int)block.InstructionsCount)
@@ -111,7 +121,7 @@ namespace Antmicro.Renode.Peripherals.CPU
                     // here we are prepared for longer opcodes
                     var mem = AttachedCPU.Bus.ReadBytes(pc, MaxOpcodeBytes, context: AttachedCPU);
                     // TODO: what about flags?
-                    if(!AttachedCPU.Disassembler.TryDisassembleInstruction(pc, mem, 0, out var result))
+                    if(!tryDisassembleInstruction(pc, mem, 0, out var result))
                     {
                         cachedItem = null;
                         // mark this as an invalid opcode
@@ -136,11 +146,12 @@ namespace Antmicro.Renode.Peripherals.CPU
                 else
                 {
                     var result = cachedItem.Value;
-                    
+                    result.PC = pc;
+                   
                     switch(format)
                     {
                         case Format.PC:
-                            sb.AppendFormat("0x{0:X}\n", pc);
+                            sb.AppendFormat("0x{0:X}\n", result.PC);
                             break;
 
                         case Format.Opcode:
@@ -148,7 +159,7 @@ namespace Antmicro.Renode.Peripherals.CPU
                             break;
                             
                         case Format.PCAndOpcode:
-                            sb.AppendFormat("0x{0:X}: 0x{1}\n", pc, result.OpcodeString.ToUpper());
+                            sb.AppendFormat("0x{0:X}: 0x{1}\n", result.PC, result.OpcodeString.ToUpper());
                             break;
 
                         default:
@@ -160,6 +171,27 @@ namespace Antmicro.Renode.Peripherals.CPU
                     counter++;
                 }
             }
+        }
+        
+        private bool TryDisassembleRiscVInstruction(ulong pc, byte[] memory, uint flags, out DisassemblyResult result, int memoryOffset = 0)
+        {
+            var opcode = BitHelper.ToUInt32(memory, memoryOffset, Math.Min(4, memory.Length - memoryOffset), true);
+            if(!TryDecodeRiscVOpcodeLength(opcode, out var opcodeLength))
+            {
+                result = default(DisassemblyResult);
+                return false;
+            }
+
+            // trim opcode and keep only `opcodeLength` LSBytes
+            opcode &= uint.MaxValue >> (64 - (opcodeLength * 8));
+
+            result = new DisassemblyResult()
+            {
+                PC = pc,
+                OpcodeSize = opcodeLength,
+                OpcodeString = opcode.ToString("x").PadLeft(opcodeLength, '0')
+            };
+            return true;
         }
 
         private void DumpBuffer(StringBuilder sb)
@@ -197,7 +229,7 @@ namespace Antmicro.Renode.Peripherals.CPU
             DumpBuffer(sb);
         }
 
-        private void HandleBlock(ulong pc, uint instructionsInBlock)
+        private void HandleBlockEndHook(ulong pc, uint instructionsInBlock)
         {
             if(instructionsInBlock == 0)
             {
@@ -207,12 +239,43 @@ namespace Antmicro.Renode.Peripherals.CPU
 
             try
             {
-                blocks.Add(new Block { StartingPC = pc, InstructionsCount = instructionsInBlock });
+                blocks.Add(new Block { FirstInstructionPC = pc, InstructionsCount = instructionsInBlock });
             }
             catch(InvalidOperationException)
             {
                 // this might happen when disposing after `blocks` is marked as closed (not accepting new data)
             }
+        }
+
+        private bool TryDecodeRiscVOpcodeLength(uint opcode, out int length)
+        {
+            var lengthEncoder = opcode & 0x7F;
+            if(lengthEncoder == 0x7F)
+            {
+                // opcodes longer than 64-bits - currently not supported
+                length = 0;
+                return false;
+            }
+
+            lengthEncoder &= 0x3F;
+            if(lengthEncoder == 0x3F)
+            {
+                length = 8;
+            }
+            else if(lengthEncoder == 0x1F)
+            {
+                length = 3;
+            }
+            else if((lengthEncoder & 0x3) == 0x3)
+            {
+                length = 4;
+            }
+            else
+            {
+                length = 2;
+            }
+
+            return true;
         }
         
         private Thread underlyingThread;
@@ -221,10 +284,17 @@ namespace Antmicro.Renode.Peripherals.CPU
         private readonly string file;
         private readonly Format format;
         private readonly LRUCache<uint, Antmicro.Renode.Peripherals.CPU.Disassembler.DisassemblyResult?> cache;
+        private readonly DisassemblyDelegate tryDisassembleInstruction; 
 
         private const int MaxOpcodeBytes = 16;
         private const int BufferFlushLevel = 1000000;
         private const int CacheSize = 100000;
+
+        // the signature of this delegate is to match
+        // the `CPU.Disassembler.TryDisassembleInstruction` method exactly
+        // - hence the last, not used, argument `memoryOffset` is also listed here;
+        // this simplifies assignement and handling of disassmblers
+        private delegate bool DisassemblyDelegate(ulong pc, byte[] memory, uint flags, out DisassemblyResult result, int memoryOffset = 0);
         
         public enum Format
         {
@@ -235,12 +305,12 @@ namespace Antmicro.Renode.Peripherals.CPU
 
         private struct Block
         {
-            public ulong StartingPC;
+            public ulong FirstInstructionPC;
             public ulong InstructionsCount;
 
             public override string ToString()
             {
-                return $"[Block: starting at 0x{StartingPC:X} with {InstructionsCount} instructions]";
+                return $"[Block: ending at 0x{FirstInstructionPC:X} with {InstructionsCount} instructions]";
             }
         }
     }

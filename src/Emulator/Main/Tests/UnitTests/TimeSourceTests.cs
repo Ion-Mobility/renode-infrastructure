@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2018 Antmicro
+// Copyright (c) 2010-2022 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -73,30 +73,6 @@ namespace UnitTests
 
                 var after = sw.Elapsed;
                 Assert.IsTrue(after.TotalSeconds < roundsCount);
-            }
-        }
-
-        [Test]
-        public void ShouldSleep()
-        {
-            const int slavesCount = 5;
-            const int roundsCount = 3;
-
-            using(var timeSource = new MasterTimeSource() { Quantum = TimeInterval.FromMilliseconds(1000), AdvanceImmediately = false })
-            {
-                var timeSinks = new SimpleTimeSink[slavesCount];
-                for(int i = 0; i < slavesCount; i++)
-                {
-                    timeSinks[i] = new SimpleTimeSink(double.MaxValue);
-                    timeSource.RegisterSink(timeSinks[i]);
-                }
-                var sw = Stopwatch.StartNew();
-
-                // the first round does not increment the time - it just triggers a sync point
-                timeSource.Run(roundsCount + 1);
-
-                var after = sw.Elapsed;
-                Assert.IsTrue(after.TotalSeconds > roundsCount);
             }
         }
 
@@ -261,6 +237,36 @@ namespace UnitTests
                 Assert.AreEqual(30, timeSource.ElapsedVirtualTime.Ticks);
                 Assert.AreEqual(30, timeSlave.ElapsedVirtualTime.Ticks);
                 Assert.AreEqual(30, timeSink.ElapsedVirtualTime.Ticks);
+                
+                timeSource.Run(1);
+
+                Assert.AreEqual(5, timeSource.NumberOfSyncPoints);
+                Assert.AreEqual(14, timeSlave.NumberOfSyncPoints);
+                Assert.AreEqual(13, timeSink.NumberOfRounds);
+
+                Assert.AreEqual(40, timeSource.ElapsedVirtualTime.Ticks);
+                Assert.AreEqual(39, timeSlave.ElapsedVirtualTime.Ticks);
+                Assert.AreEqual(39, timeSink.ElapsedVirtualTime.Ticks);
+                
+                timeSource.Run(1);
+
+                Assert.AreEqual(6, timeSource.NumberOfSyncPoints);
+                Assert.AreEqual(17, timeSlave.NumberOfSyncPoints);
+                Assert.AreEqual(16, timeSink.NumberOfRounds);
+
+                Assert.AreEqual(50, timeSource.ElapsedVirtualTime.Ticks);
+                Assert.AreEqual(48, timeSlave.ElapsedVirtualTime.Ticks);
+                Assert.AreEqual(48, timeSink.ElapsedVirtualTime.Ticks);
+                
+                timeSource.Run(1);
+                
+                Assert.AreEqual(7, timeSource.NumberOfSyncPoints);
+                Assert.AreEqual(21, timeSlave.NumberOfSyncPoints);
+                Assert.AreEqual(20, timeSink.NumberOfRounds);
+
+                Assert.AreEqual(60, timeSource.ElapsedVirtualTime.Ticks);
+                Assert.AreEqual(60, timeSlave.ElapsedVirtualTime.Ticks);
+                Assert.AreEqual(60, timeSink.ElapsedVirtualTime.Ticks);
             }
         }
 

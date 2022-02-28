@@ -69,6 +69,7 @@
     <Compile Include="Peripherals\Miscellaneous\LED.cs" />
     <Compile Include="Peripherals\Miscellaneous\MPFS_Sysreg.cs" />
     <Compile Include="Peripherals\Miscellaneous\MPFS_DDRMock.cs" />
+    <Compile Include="Peripherals\Miscellaneous\ResetPin.cs" />
     <Compile Include="Peripherals\Memory\ArrayMemory.cs" />
     <Compile Include="Peripherals\Memory\ArrayMemoryWithReadonlys.cs" />
     <Compile Include="Peripherals\Miscellaneous\EmulatorController.cs" />
@@ -381,6 +382,7 @@
     <Compile Include="Peripherals\Sound\EOSS3_Voice.cs" />
     <Compile Include="Peripherals\Network\LiteX_Ethernet_CSR32.cs" />
     <Compile Include="Peripherals\Timers\LiteX_Timer_CSR32.cs" />
+    <Compile Include="Peripherals\Timers\STM32F4_IndependentWatchdog.cs" />
     <Compile Include="Peripherals\Miscellaneous\OpenTitan_VerilatorSwTestStatus.cs" />
     <Compile Include="Peripherals\Miscellaneous\OpenTitan_PowerManager.cs" />
     <Compile Include="Peripherals\Miscellaneous\OpenTitan_HMAC.cs" />
@@ -407,6 +409,7 @@
     <Compile Include="Peripherals\Miscellaneous\IMX_TRNG.cs" />
     <Compile Include="Peripherals\SPI\NORFlash\DecodedOperation.cs" />
     <Compile Include="Peripherals\SPI\GigaDevice_GD25LQ.cs" />
+    <Compile Include="Peripherals\Miscellaneous\STM32_PWR.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ProjectExtensions>
@@ -456,7 +459,7 @@
       <Project>{55ABBA4C-AAF9-4726-A592-0C92436CEC92}</Project>
       <Name>PacketDotNet</Name>
     </ProjectReference>
-    <ProjectReference Include="..\..\..\..\..\lib\bc-csharp\crypto\crypto.Net45.csproj">
+    <ProjectReference Include="..\..\..\..\..\lib\bc-csharp\crypto\crypto.Net45.expanded.csproj">
       <Project>{45473847-8AF8-4BAF-B768-442C6875B8CF}</Project>
       <Name>crypto</Name>
     </ProjectReference>

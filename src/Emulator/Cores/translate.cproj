@@ -51,11 +51,11 @@
           <SourceFiles Include="renode/arch/$(EmulatedTarget)/*.c" />
       </ItemGroup>
       <ItemGroup>
-          <CompilationFlags Include="-fomit-frame-pointer" />
+          <CompilationFlags Include="-fomit-frame-pointer" Condition="$(Configuration) == 'Release'" />
           <CompilationFlags Include="-shared" Condition=" $(CurrentPlatform) != 'OSX' " />
           <CompilationFlags Include="-fPIC" Condition=" $(CurrentPlatform) != 'Windows'" />
           <CompilationFlags Include="-g3" Condition=" $(Configuration) == 'Debug'" />
-          <CompilationFlags Include="-O3" Condition=" $(Configuration) == 'Release' or $(Configuration) == ''" />
+          <CompilationFlags Include="-O3" Condition=" $(Configuration) == 'Release'" />
           <CompilationFlags Include="-Wall" />
           <CompilationFlags Include="-Wextra" />
           <CompilationFlags Include="-Wno-unused-parameter" />
@@ -93,7 +93,6 @@
           <!-- This define is a little hack: It is necessary for CLinkerTask to create separate entry in hashes cache -->
           <LinkFlags Include="-DFAKE_$(EmulatedTargetUpper)_$(TargetEndianess)_$(TargetWordSize)" />
           <LinkFlags Include="-Wl,--wrap=memcpy" Condition=" $(CurrentPlatform) == 'Linux' " />
-          <LinkFlags Include="-fomit-frame-pointer" />
           <!-- On Windows: link MinGW's pthread library statically -->
           <LinkFlags Include="-static -lwinpthread -dynamic" Condition="$(CurrentPlatform) == 'Windows'" />
           <LinkFlags Include="-lpthread" Condition="$(CurrentPlatform) != 'Windows'" />

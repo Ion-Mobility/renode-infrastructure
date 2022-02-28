@@ -1,5 +1,5 @@
 //
-// Copyright (c) 2010-2021 Antmicro
+// Copyright (c) 2010-2022 Antmicro
 //
 // This file is licensed under the MIT License.
 // Full license text is available in 'licenses/MIT.txt'.
@@ -15,8 +15,12 @@ namespace Antmicro.Renode.UI
     {
         public ConsoleIOSource()
         {
-            Console.TreatControlCAsInput = true;
-
+            isInputRedirected = Console.IsInputRedirected;
+            if(!isInputRedirected)
+            {
+                Console.TreatControlCAsInput = true;
+            }
+            
             checker = new UTF8Checker();
             
             var inputHandler = new System.Threading.Thread(HandleInput)
@@ -34,6 +38,16 @@ namespace Antmicro.Renode.UI
 
         public void Flush()
         {
+        }
+
+        public void Pause()
+        {
+            // Required by IActiveIOSource interface
+        }
+
+        public void Resume()
+        {
+            // Required by IActiveIOSource interface
         }
 
         public void Write(byte b)
@@ -58,6 +72,27 @@ namespace Antmicro.Renode.UI
         public event Action<int> ByteRead;
 
         private void HandleInput()
+        {
+            if(isInputRedirected)
+            {
+                RedirectedHandling();
+            }
+            else
+            {
+                StandardHandling();
+            }
+        }
+
+        private void RedirectedHandling()
+        {
+            // For cases in which input has been redirected from a file
+            while(true)
+            {
+                ByteRead?.Invoke(Console.Read());
+            }
+        }
+
+        private void StandardHandling()
         {
             var mappings = new Dictionary<ConsoleKey, byte[]>()
             {
@@ -100,6 +135,7 @@ namespace Antmicro.Renode.UI
         }
 
         private readonly UTF8Checker checker;
+        private readonly bool isInputRedirected;
 
         private const byte ESCCode = 0x1B;
         private const byte CSICode = 0x5B;
